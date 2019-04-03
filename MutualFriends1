@@ -1,0 +1,194 @@
+import java.io.*;
+import java.net.URI;
+import java.util.*;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.*;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.Mapper.Context;
+import org.apache.hadoop.mapreduce.TaskCounter;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.MultipleInputs;
+import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+
+public class MutualFriends {
+
+    public static class TextArrayWritable extends ArrayWritable {
+        public TextArrayWritable() {
+            super(Text.class);
+        }
+
+        public TextArrayWritable(String[] strings) {
+            super(Text.class);
+            Text[] texts = new Text[strings.length];
+            for (int i = 0; i < strings.length; i++) {
+                texts[i] = new Text(strings[i]);
+            }
+            set(texts);
+        }
+
+        public String getStrings() {
+            String strings = "";
+            for (int i = 0; i < this.get().length; i++) {
+                strings = strings + " "+ this.get()[i].toString();
+            }
+            return strings;
+        }
+
+        public int getSize() {
+            return this.get().length;
+        }
+
+    }
+
+
+    public static class Map
+            extends Mapper<LongWritable, Text, Text, TextArrayWritable>{
+
+        private final static IntWritable one = new IntWritable(1);
+        ArrayWritable arrayWritable = new ArrayWritable(Text.class);
+
+
+        private Text word = new Text(); // type of output key
+        //List<String> l = new ArrayList<>();
+        // HashMap<String,List<String>> hm = new HashMap<>();
+
+        public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+            String[] lines = value.toString().split("\n");
+            for(String str: lines) {
+                //System.err.println(str);
+                String[] kvstring = str.split("\\s+");
+                //System.err.println(kvstring[0]);
+                //String k = kvstring[0];
+                //String v = kvstring[1];
+                String k = "";
+                String v = "";
+
+                if(kvstring.length == 2) {
+                    k = kvstring[0];
+                    v = kvstring[1];
+                } else {
+                    continue;
+                }
+
+                String[] values = v.split(",");
+                Text[] tvalues = new Text[values.length];
+                for(int i=0;i<values.length;i++) {
+                    tvalues[i] = new Text(values[i]);
+                }
+                //arrayWritable.set(tvalues);
+
+                for(String token: values) {
+                    String combKey = "";
+                    int a = Integer.valueOf(k);
+                    int b = Integer.valueOf(token);
+                    if (a<b) {
+                        combKey = k+"_"+token;
+                    } else {
+                        combKey = token+"_"+k;
+                    }
+                    //if(combKey == "1_2") {
+                    word.set(combKey);
+                    //hm.put(combKey,values);
+                    context.write(word, new TextArrayWritable(values));
+                    //}
+                }
+
+
+
+            }
+        }
+    }
+
+    public static class Reduce
+            extends Reducer<Text,TextArrayWritable,Text,Text> {
+
+        private IntWritable result = new IntWritable();
+        private ArrayWritable res = new ArrayWritable(Text.class);
+        private Text word = new Text();
+        String op = "";
+
+        public void reduce(Text key, Iterable<TextArrayWritable> values, Context context) throws IOException, InterruptedException {
+            int size = 0;
+            String keyString = key.toString();
+            HashMap<String,Integer> hashMap= new HashMap<>();
+            //op = keyString.split("_")[0]+ "," + keyString.split("_")[1] + "\t";
+            op = "";
+
+            int sum = 0; // initialize the sum for each keyword
+            TextArrayWritable tmp = new TextArrayWritable();
+            String s = "";
+
+//            for(TextArrayWritable arr : values) {
+//                size++;
+//                //op+=arr.printStrings();
+//            }
+
+
+            for(TextArrayWritable arr : values) {
+                //String[] val = arr.getStrings();
+                String array = arr.getStrings();
+                String[] val = array.split("\\s+");
+                for(String str: val) {
+                    if(!hashMap.containsKey(str)) {
+                        hashMap.put(str, 1);
+                    } else {
+                        int count = hashMap.get(str);
+                        hashMap.put(str,count+1);
+                    }
+                    if(hashMap.get(str) == 2) {
+                        op += " " + str;
+                    }
+                    //hashSet.add(str);
+                }
+
+            }
+
+            context.write(key,new Text(op));
+        }
+    }
+
+
+    // Driver program
+    public static void main(String[] args) throws Exception {
+        Configuration conf = new Configuration();
+        String[] otherArgs = new GenericOptionsParser(conf, args).getRemainingArgs();
+        // get all args
+        if (otherArgs.length != 3) {
+            System.err.println(otherArgs[0]);
+            System.err.println(otherArgs.length);
+            System.err.println("Usage: MutualFriends <in> <out>");
+            System.exit(2);
+        }
+
+        // create a job with name "wordcount"
+        Job job = new Job(conf, "MutualFriends");
+        job.setJarByClass(MutualFriends.class);
+        job.setMapperClass(Map.class);
+        job.setReducerClass(Reduce.class);
+
+        job.setMapOutputKeyClass(Text.class);
+        job.setMapOutputValueClass(TextArrayWritable.class);
+
+        // uncomment the following line to add the Combiner job.setCombinerClass(Reduce.class);
+
+        // set output key type
+        job.setOutputKeyClass(Text.class);
+        // set output value type
+        //job.setOutputValueClass(IntWritable.class);
+        job.setOutputValueClass(Text.class);
+        //job.setMapOutputValueClass(ArrayWritable.class);
+
+        //set the HDFS path of the input data
+        FileInputFormat.addInputPath(job, new Path(otherArgs[1]));
+        // set the HDFS path for the output
+        FileOutputFormat.setOutputPath(job, new Path(otherArgs[2]));
+        //Wait till job completion
+        System.exit(job.waitForCompletion(true) ? 0 : 1);
+    }
+}
