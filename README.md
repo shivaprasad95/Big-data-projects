@@ -12,4 +12,4 @@ Given any two Users (they are friend) as input, output the list of the names and
 ## Average
 1. Calculate the average age of the direct friends of each user. <br />
 2. Sort the users by the average age from step 1 in descending order. <br />
-3. Output the tail 15 (15 lowest averages) users from step 2 with their address and the.
+3. Output the tail 15 (15 lowest averages) users from step 2 with their address and the calculated average age.
