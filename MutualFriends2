@@ -1,0 +1,260 @@
+import java.io.*;
+import java.net.URI;
+import java.util.*;
+
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.io.*;
+import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Reducer;
+import org.apache.hadoop.mapreduce.Mapper.Context;
+import org.apache.hadoop.mapreduce.TaskCounter;
+import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
+import org.apache.hadoop.mapreduce.lib.input.MultipleInputs;
+import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.util.GenericOptionsParser;
+
+
+
+class Friends implements Comparable<Friends>{
+    int count;
+    String key;
+    String friends_list;
+
+    Friends(String key, int count, String list) {
+        this.key = key;
+        this.count = count;
+        this.friends_list = list;
+    }
+
+    @Override
+    public int compareTo(Friends o) {
+        return (this.count - o.count);
+    }
+}
+public class MutualFriends {
+    //private static PriorityQueue<Friends> queue = new PriorityQueue<>(10);
+    static int cc = 1;
+
+
+    public static class IntArrayWritable extends ArrayWritable {
+        public IntArrayWritable() {
+            super(IntWritable.class);
+        }
+
+        public IntArrayWritable(int[] values) {
+            super(IntWritable.class);
+            IntWritable[] vals = new IntWritable[values.length];
+            for (int i = 0; i < values.length; i++) {
+                vals[i] = new IntWritable(values[i]);
+            }
+            set(vals);
+
+        }
+
+        public int[] getArray() {
+            int[] arr = new int[this.get().length];
+            for (int i = 0; i < this.get().length; i++) {
+                arr[i] = Integer.valueOf(this.get()[i].toString());
+            }
+            return arr;
+        }
+    }
+
+
+    public static class Map1
+            extends Mapper<LongWritable, Text, Text, IntArrayWritable>{
+
+        private final static IntWritable one = new IntWritable(1);
+
+        private Text word = new Text(); // type of output key
+
+        public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+            String[] lines = value.toString().split("\n");
+            for(String str: lines) {
+                String[] kvstring = str.split("\\s+");
+
+                String k = "";
+                String v = "";
+
+                if(kvstring.length == 2) {
+                    k = kvstring[0];
+                    v = kvstring[1];
+                } else {
+                    continue;
+                }
+
+                String[] values = v.split(",");
+                int[] tvaluesInt = new int[values.length];
+
+                for(int i=0;i<values.length;i++) {
+                    tvaluesInt[i] = Integer.valueOf(values[i]);
+                }
+
+                for(String token: values) {
+                    String combKey = "";
+                    int a = Integer.valueOf(k);
+                    int b = Integer.valueOf(token);
+                    if (a<b) {
+                        combKey = k+"_"+token;
+                    } else {
+                        combKey = token+"_"+k;
+                    }
+                    word.set(combKey);
+                    context.write(word, new IntArrayWritable(tvaluesInt));
+                }
+
+
+
+            }
+        }
+    }
+
+    public static class Reduce1
+            extends Reducer<Text,IntArrayWritable,Text,Text> {
+
+        private IntWritable result = new IntWritable();
+        private ArrayWritable res = new ArrayWritable(Text.class);
+
+
+        private Text word = new Text();
+        List<Integer> opList;
+        int op1 = 0;
+
+        public void reduce(Text key, Iterable<IntArrayWritable> values, Context context) throws IOException, InterruptedException {
+
+            HashMap<Integer,Integer> hashMap= new HashMap<>();
+            opList = new ArrayList<>();
+            String newKey = key.toString()+"~";
+
+            for(IntArrayWritable arr : values) {
+                int[] val = arr.getArray();
+
+                for(int str: val) {
+                    if(!hashMap.containsKey(str)) {
+                        hashMap.put(str, 1);
+                    } else {
+                        hashMap.put(str, 2);
+                    }
+                    if(hashMap.get(str) == 2) {
+                        opList.add(str);
+                    }
+                }
+
+            }
+
+            context.write(new Text(newKey),new Text(opList.size()+"-"+opList.toString()));
+        }
+
+
+
+    }
+
+
+
+
+
+
+
+
+
+
+
+    public static class Map2
+            extends Mapper<LongWritable, Text, IntWritable, Text>{
+
+        private final static IntWritable one = new IntWritable(1);
+
+        private Text word = new Text(); // type of output key
+
+        public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
+            context.write(one,value);
+        }
+    }
+
+    public static class Reduce2
+            extends Reducer<IntWritable,Text,Text,Text> {
+        PriorityQueue<Friends> queue = new PriorityQueue<>(10);
+        private IntWritable result = new IntWritable();
+        private ArrayWritable res = new ArrayWritable(Text.class);
+
+
+        private Text word = new Text();
+        List<Integer> opList;
+        int op1 = 0;
+
+        public void reduce(IntWritable key, Iterable<Text> values, Context context) throws IOException, InterruptedException {
+            for(Text t : values) {
+                //context.write(new Text(""),t);
+                String[] op = t.toString().split("~");
+                String keypair = op[0];
+                String comb_values = op[1].trim();
+                String[] op1 = comb_values.split("-");
+                int count = Integer.parseInt(op1[0]);
+                String friends_list = op1[1];
+
+
+                Friends frnd = new Friends(keypair,count,friends_list);
+                if(queue.size() < 10) {
+                    //Collections.sort(opList);
+                    queue.add(frnd);
+                } else {
+                    if(queue.peek().count < frnd.count) {
+                        queue.remove();
+                        queue.add(frnd);
+                    }
+                }
+
+            }
+
+            for(int i=0;i<10;i++) {
+                Friends t = queue.remove();
+                System.err.println(t.key +" "+ t.friends_list);
+                context.write(new Text(t.key+" "+t.count), new Text(t.friends_list));
+
+            }
+        }
+
+
+    }
+
+    // Driver program
+    public static void main(String[] args) throws Exception {
+        Configuration conf1 = new Configuration();
+        String[] otherArgs = new GenericOptionsParser(conf1, args).getRemainingArgs();
+        // get all args
+        if (otherArgs.length != 3) {
+            System.err.println(otherArgs[0]);
+            System.err.println(otherArgs.length);
+            System.err.println("Usage: Mutual Friends <in> <out>");
+            System.exit(2);
+        }
+        Job job1 = new Job(conf1, "mutual friends phase 1");
+        job1.setJarByClass(MutualFriends.class);
+        job1.setMapperClass(Map1.class);
+        job1.setReducerClass(Reduce1.class);
+        job1.setMapOutputKeyClass(Text.class);
+        job1.setMapOutputValueClass(IntArrayWritable.class);
+        job1.setOutputKeyClass(Text.class);
+        job1.setOutputValueClass(Text.class);
+        FileInputFormat.addInputPath(job1, new Path(otherArgs[1]));
+        FileOutputFormat.setOutputPath(job1, new Path(otherArgs[2]+ "/temp"));
+        //System.exit(job1.waitForCompletion(true) ? 0 : 1);
+        if(job1.waitForCompletion(true)) {
+            Configuration conf2 = new Configuration();
+            Job job2 = new Job(conf2, "mutual friends phase 2");
+            job2.setJarByClass(MutualFriends.class);
+            job2.setMapperClass(Map2.class);
+            job2.setReducerClass(Reduce2.class);
+            job2.setMapOutputKeyClass(IntWritable.class);
+            job2.setMapOutputValueClass(Text.class);
+            job2.setOutputKeyClass(Text.class);
+            job2.setOutputValueClass(Text.class);
+            FileInputFormat.addInputPath(job2, new Path(otherArgs[2]+ "/temp/part-r-00000"));
+            FileOutputFormat.setOutputPath(job2, new Path(otherArgs[2]+"/final"));
+            System.exit(job2.waitForCompletion(true) ? 0 : 1);
+        }
+    }
+}
