@@ -1,10 +1,10 @@
 # Big-data-projects
 
 ## MutualFriends1
-MapReduce program in Hadoop that implements a simple “Mutual/Common friend list of two friends
+MapReduce program in Hadoop that implements a simple Mutual/Common friend list of two friends.
 
 ## MutualFriends2
-Friend pairs whose number of common friends (number of mutual friend) is within the top-10 in all the pairs
+Friend pairs whose number of common friends (number of mutual friend) is within the top-10 in all the pairs.
 
 ## InMemoryJoin
 Given any two Users (they are friend) as input, output the list of the names and the city of their mutual friends.
